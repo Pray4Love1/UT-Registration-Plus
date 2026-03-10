@@ -4,7 +4,7 @@ import Text from '@views/components/common/Text/Text';
 import { ColorPickerProvider } from '@views/contexts/ColorPickerContext';
 import { useSentryScope } from '@views/contexts/SentryContext';
 import type { CalendarGridCourse } from '@views/hooks/useFlattenedCourseSchedule';
-import React, { Fragment } from 'react';
+import React, { Fragment, useMemo } from 'react';
 
 import CalendarCell from './CalendarGridCell';
 import { calculateCourseCellColumns } from './utils';
@@ -116,34 +116,48 @@ function AccountForCourseConflicts({ courseCells, setCourse }: AccountForCourseC
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const [sentryScope] = IS_STORYBOOK ? [undefined] : useSentryScope();
 
-    //  Groups by dayIndex to identify overlaps
-    const days = courseCells.reduce(
-        (acc, cell: CalendarGridCourse) => {
-            const { dayIndex } = cell.calendarGridPoint;
-            if (acc[dayIndex] === undefined) {
-                acc[dayIndex] = [];
-            }
-            acc[dayIndex]!.push(cell);
-            return acc;
-        },
-        {} as Record<number, CalendarGridCourse[]>
-    );
+    const laidOutBlocks = useMemo(() => {
+        const synchronousCells = courseCells
+            .filter(block => !block.async)
+            .map(block => ({
+                ...block,
+                componentProps: {
+                    ...block.componentProps,
+                },
+                calendarGridPoint: {
+                    ...block.calendarGridPoint,
+                },
+            }));
 
-    // Check for overlaps within each day and adjust gridColumnIndex and totalColumns
-    Object.values(days).forEach((dayCells: CalendarGridCourse[], idx) => {
-        try {
-            calculateCourseCellColumns(dayCells);
-        } catch (error) {
-            console.error(`Error calculating course cell columns ${idx}`, error);
-            if (sentryScope) {
-                sentryScope.captureException(error);
-            }
-        }
-    });
+        // Groups by dayIndex to identify overlaps
+        const days = synchronousCells.reduce(
+            (acc, cell: CalendarGridCourse) => {
+                const { dayIndex } = cell.calendarGridPoint;
+                if (acc[dayIndex] === undefined) {
+                    acc[dayIndex] = [];
+                }
+                acc[dayIndex]!.push(cell);
+                return acc;
+            },
+            {} as Record<number, CalendarGridCourse[]>
+        );
 
-    return courseCells
-        .filter(block => !block.async)
-        .map(block => {
+        // Check for overlaps within each day and adjust gridColumnIndex and totalColumns
+        Object.values(days).forEach((dayCells: CalendarGridCourse[], idx) => {
+            try {
+                calculateCourseCellColumns(dayCells);
+            } catch (error) {
+                console.error(`Error calculating course cell columns ${idx}`, error);
+                if (sentryScope) {
+                    sentryScope.captureException(error);
+                }
+            }
+        });
+
+        return synchronousCells;
+    }, [courseCells, sentryScope]);
+
+    return laidOutBlocks.map(block => {
             const { courseDeptAndInstr, timeAndLocation, status } = block.componentProps;
 
             return (
