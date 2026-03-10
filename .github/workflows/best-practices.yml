@@ -47,10 +47,11 @@ jobs:
         run: pnpm prettier --write src  # Adjust glob if your script uses a different pattern, e.g., '.'
 
       - name: Commit formatting changes (if any)
-        uses: stefanzweifel/git-auto-commit-action@v5  # v5 is stable and widely used; upgrade to @v7 if you want latest features
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: Apply Prettier formatting
+          commit_message: chore: apply Prettier formatting  # Valid Conventional Commit prefix
           branch: ${{ github.head_ref || github.ref_name }}
           skip_dirty_check: false  # Only commit if files actually changed
+          commit_options: '--no-verify'  # Bypasses Husky/commitlint for this auto-commit
           # Optional: Limit to specific files if you want to be more targeted
           # file_pattern: src/**/*.{ts,tsx,js,jsx,json,css,md}
