@@ -6,20 +6,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # These help with PR branches/forks
-          ref: ${{ github.head_ref || github.ref_name }}
-          persist-credentials: true
+          ref: ${{ github.head_ref || github.ref_name }}  # Ensures correct branch for PRs
+          persist-credentials: true  # Allows git ops if needed
 
-      - name: Fix git safe directory (broad wildcard to cover all cases)
+      - name: Mark repo as git safe (wildcard to cover container mounts)
         run: git config --global --add safe.directory '*'
-
-      # Optional: Verify git works (for debugging – remove after testing)
-      # - name: Debug git info
-      #   run: |
-      #     git --version
-      #     git rev-parse HEAD
-      #     git log -n 5 --oneline
-      #     git branch -a
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -35,9 +26,6 @@ jobs:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           exitZeroOnChanges: true
           autoAcceptChanges: main
-          # Explicitly pass these – bypasses most auto-detection failures
+          # Explicitly set these to bypass any auto-detection flakiness
           branchName: ${{ github.head_ref || github.ref_name }}
           commitSha: ${{ github.sha }}
-          # Optional: If on main, auto-accept; otherwise detect changes normally
-          # Only uncomment if you want to force baseline on PRs sometimes
-          # onlyChanged: false
