@@ -1,5 +1,7 @@
-name: 'Chromatic'
+name: Chromatic
+
 on: [push, pull_request]
+
 jobs:
   chromatic:
     runs-on: ubuntu-latest
@@ -8,15 +10,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name }}  # Ensures correct branch for PRs/forks
+          persist-credentials: true  # Helps git ops if needed
+
+      - name: Mark repo as git safe (wildcard covers container mounts)
+        run: git config --global --add safe.directory '*'
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
+
       - name: Install dependencies
         run: pnpm install
+
       - name: Publish to Chromatic
         uses: chromaui/action@latest
         with:
-          projectToken: chpt_cc07511614f734c # bleh, but not really that a "secret", and necessary to expose for forks to build on chromatic
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           exitZeroOnChanges: true
-          autoAcceptChanges: 'main'
+          autoAcceptChanges: main
+          branchName: ${{ github.head_ref || github.ref_name }}  # Valid and helpful for PRs
+          # Removed: commitSha (invalid input – action auto-detects SHA from git/env)
