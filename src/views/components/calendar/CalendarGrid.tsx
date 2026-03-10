@@ -145,6 +145,8 @@ function AccountForCourseConflicts({ courseCells, setCourse }: AccountForCourseC
         .filter(block => !block.async)
         .map(block => {
             const { courseDeptAndInstr, timeAndLocation, status } = block.componentProps;
+            const totalColumns = Math.max(block.totalColumns ?? 1, 1);
+            const safeColumnIndex = Math.min(Math.max((block.gridColumnStart ?? 1) - 1, 0), totalColumns - 1);
 
             return (
                 <div
@@ -152,8 +154,8 @@ function AccountForCourseConflicts({ courseCells, setCourse }: AccountForCourseC
                     style={{
                         gridColumn: `${block.calendarGridPoint.dayIndex + 3}`,
                         gridRow: `${block.calendarGridPoint.startIndex} / ${block.calendarGridPoint.endIndex}`,
-                        width: `calc(100% / ${block.totalColumns ?? 1})`,
-                        marginLeft: `calc(100% * ${((block.gridColumnStart ?? 0) - 1) / (block.totalColumns ?? 1)})`,
+                        width: `calc(100% / ${totalColumns})`,
+                        marginLeft: `calc(100% * ${safeColumnIndex / totalColumns})`,
                     }}
                     className='pb-1 pl-0 pr-2.5 pt-0 screenshot:pb-0.5 screenshot:pr-0.5'
                 >
