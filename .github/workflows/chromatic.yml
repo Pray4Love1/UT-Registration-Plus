@@ -1,5 +1,9 @@
 name: 'Chromatic'
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
 jobs:
   chromatic:
     runs-on: ubuntu-latest
@@ -10,10 +14,8 @@ jobs:
           fetch-depth: 0
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Publish to Chromatic
         uses: chromaui/action@latest
         with:

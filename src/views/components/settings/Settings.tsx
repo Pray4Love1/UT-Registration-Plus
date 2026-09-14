@@ -2,11 +2,10 @@
 import { addCourseByURL } from '@pages/background/lib/addCourseByURL';
 import { deleteAllSchedules } from '@pages/background/lib/deleteSchedule';
 import importSchedule from '@pages/background/lib/importSchedule';
-import { CalendarDots } from '@phosphor-icons/react';
 // Shared
 import { background } from '@shared/messages';
 import { DevStore } from '@shared/storage/DevStore';
-import { initSettings, OptionsStore } from '@shared/storage/OptionsStore';
+import { OptionsStore } from '@shared/storage/OptionsStore';
 import { CRX_PAGES } from '@shared/types/CRXPages';
 import Particles from '@tsparticles/react';
 import { Button } from '@views/components/common/Button';
@@ -17,19 +16,26 @@ import { LargeLogo } from '@views/components/common/LogoIcon';
 import Text from '@views/components/common/Text/Text';
 // Hooks
 import useChangelog from '@views/hooks/useChangelog';
-import useSchedules from '@views/hooks/useSchedules';
-import { GitHubStatsService, LONGHORN_DEVELOPERS_ADMINS, LONGHORN_DEVELOPERS_SWE } from '@views/lib/getGitHubStats';
+import { useActiveSchedule } from '@views/hooks/useSchedules';
+import {
+    GitHubStatsService,
+    LONGHORN_DEVELOPERS_ADMINS,
+    LONGHORN_DEVELOPERS_HARDCODED,
+    UTRP_ALUMNI,
+    UTRP_LEADS,
+} from '@views/lib/getGitHubStats';
 // Misc
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CalendarDotsIcon from '~icons/ph/calendar-dots';
 // Icons
-import IconoirGitFork from '~icons/iconoir/git-fork';
+import GitMergeIcon from '~icons/ph/git-merge';
 
 import { useMigrationDialog } from '../common/MigrationDialog';
 import { AdvancedSettings } from './AdvancedSettings';
-import { DEV_MODE_CLICK_TARGET, INCLUDE_MERGED_PRS, STATS_TOGGLE_KEY } from './constants';
 import { ContributorCard } from './ContributorCard';
 import { ContributorCardSkeleton } from './ContributorCardSkeleton';
+import { DEV_MODE_CLICK_TARGET, INCLUDE_MERGED_PRS, STATS_TOGGLE_KEY } from './constants';
 import DevMode from './DevMode';
 import { useBirthdayCelebration } from './useBirthdayCelebration';
 import { useDevMode } from './useDevMode';
@@ -37,30 +43,55 @@ import { useDevMode } from './useDevMode';
 const manifest = chrome.runtime.getManifest();
 
 /**
+ * Function that returns sort order of a provided member, for the settings page stats.
+ * This is located outside of the component because we use useMemo and there is no need
+ * to use useCallback with a function that deals with no components
+ * @param member A member of LHD
+ * @returns
+ */
+const getContributorPriority = (member: { role: string[] }) => {
+    const roles = member.role.map(role => role.toLowerCase());
+
+    if (roles.some(role => role.includes('founder'))) return 0;
+    if (roles.some(role => role.includes('co-founder'))) return 1;
+    if (roles.some(role => role.includes('advisor'))) return 2;
+    if (roles.some(role => role.includes('former'))) return 3;
+    if (roles.some(role => role.includes('alumni'))) return 4;
+
+    return 5;
+};
+
+/**
  * Main Settings Component for managing user settings and preferences.
  *
  * @returns The Settings component.
  */
-export default function Settings(): JSX.Element {
+export default function Settings(): React.JSX.Element {
     const gitHubStatsService = useMemo(() => new GitHubStatsService(), []);
+    const calendarPageUrl = chrome.runtime.getURL(CRX_PAGES.CALENDAR);
+
+    const getPersonalWebsite = (member: unknown): string | undefined => {
+        if (typeof member !== 'object' || member === null) return undefined;
+        const maybeWebsite = (member as { personalWebsite?: unknown }).personalWebsite;
+        return typeof maybeWebsite === 'string' ? maybeWebsite : undefined;
+    };
 
     // State
-    const [highlightConflicts, setHighlightConflicts] = useState(false);
-    const [loadAllCourses, setLoadAllCourses] = useState(false);
-    const [calendarNewTab, setCalendarNewTab] = useState(false);
-    const [increaseScheduleLimit, setIncreaseScheduleLimit] = useState(false);
     const [showGitHubStats, setShowGitHubStats] = useState(false);
     const [githubStats, setGitHubStats] = useState<Awaited<
         ReturnType<typeof gitHubStatsService.fetchGitHubStats>
     > | null>(null);
-    const [isDeveloper, setIsDeveloper] = useState(false);
+    const options = OptionsStore.useStore();
+    const enableDataRefreshing = options.enableDataRefreshing;
+    const enableCourseStatusChips = options.enableCourseStatusChips;
+    const isDeveloper = DevStore.useStore(store => store.isDeveloper);
 
-    const [activeSchedule] = useSchedules();
+    const activeSchedule = useActiveSchedule();
     const showDialog = usePrompt();
     const handleChangelogOnClick = useChangelog();
     const showMigrationDialog = useMigrationDialog();
 
-    const [devMode, toggleDevMode] = useDevMode(DEV_MODE_CLICK_TARGET);
+    const [devModeJustEnabled, toggleDevMode] = useDevMode(DEV_MODE_CLICK_TARGET);
     const { showParticles, particlesInit, particlesOptions, triggerCelebration, isBirthday } = useBirthdayCelebration();
 
     // Stable skeleton ids to avoid using array index as keys
@@ -77,59 +108,17 @@ export default function Settings(): JSX.Element {
             }
         };
 
-        const initAndSetSettings = async () => {
-            const { enableHighlightConflicts, enableScrollToLoad, alwaysOpenCalendarInNewTab, allowMoreSchedules } =
-                await initSettings();
-            setHighlightConflicts(enableHighlightConflicts);
-            setLoadAllCourses(enableScrollToLoad);
-            setCalendarNewTab(alwaysOpenCalendarInNewTab);
-            setIncreaseScheduleLimit(allowMoreSchedules);
-        };
-
-        const initDS = async () => {
-            const isDev = await DevStore.get('isDeveloper');
-            setIsDeveloper(isDev);
-        };
-
         const handleKeyPress = (event: KeyboardEvent) => {
             if (event.key === STATS_TOGGLE_KEY || event.key === STATS_TOGGLE_KEY.toUpperCase()) {
                 setShowGitHubStats(prev => !prev);
             }
         };
 
-        // Listeners
-        const ds_l1 = DevStore.subscribe('isDeveloper', async ({ newValue }) => {
-            setIsDeveloper(newValue);
-        });
-
-        const l1 = OptionsStore.subscribe('enableHighlightConflicts', async ({ newValue }) => {
-            setHighlightConflicts(newValue);
-        });
-
-        const l2 = OptionsStore.subscribe('enableScrollToLoad', async ({ newValue }) => {
-            setLoadAllCourses(newValue);
-        });
-
-        const l3 = OptionsStore.subscribe('alwaysOpenCalendarInNewTab', async ({ newValue }) => {
-            setCalendarNewTab(newValue);
-        });
-
-        const l4 = OptionsStore.subscribe('allowMoreSchedules', async ({ newValue }) => {
-            setIncreaseScheduleLimit(newValue);
-        });
-
         window.addEventListener('keydown', handleKeyPress);
 
-        initDS();
         fetchGitHubStats();
-        initAndSetSettings();
 
         return () => {
-            OptionsStore.unsubscribe(l1);
-            OptionsStore.unsubscribe(l2);
-            OptionsStore.unsubscribe(l3);
-            OptionsStore.unsubscribe(l4);
-            DevStore.unsubscribe(ds_l1);
             window.removeEventListener('keydown', handleKeyPress);
         };
     }, [gitHubStatsService]);
@@ -147,7 +136,6 @@ export default function Settings(): JSX.Element {
                     <p className='text-sm text-gray-600'>Note: This will not erase your settings and preferences.</p>
                 </>
             ),
-            // eslint-disable-next-line react/no-unstable-nested-components
             buttons: accept => (
                 <Button
                     variant='filled'
@@ -179,30 +167,37 @@ export default function Settings(): JSX.Element {
     }, []);
 
     const sortedContributors = useMemo(() => {
-        if (!githubStats) return LONGHORN_DEVELOPERS_SWE;
-        return [...LONGHORN_DEVELOPERS_SWE].sort(
-            (a, b) =>
+        const base = [...LONGHORN_DEVELOPERS_HARDCODED, ...UTRP_LEADS, ...UTRP_ALUMNI];
+        if (!githubStats) return base;
+
+        return [...base].sort((a, b) => {
+            const priorityDiff = getContributorPriority(a) - getContributorPriority(b);
+            if (priorityDiff !== 0) return priorityDiff;
+
+            return (
                 (githubStats.userGitHubStats[b.githubUsername]?.commits ?? 0) -
                 (githubStats.userGitHubStats[a.githubUsername]?.commits ?? 0)
-        );
+            );
+        });
     }, [githubStats]);
 
     const additionalContributors = useMemo(() => {
         if (!githubStats) return [];
+        const knownUsernames = new Set<string>([
+            ...LONGHORN_DEVELOPERS_ADMINS.map(a => a.githubUsername),
+            ...LONGHORN_DEVELOPERS_HARDCODED.map(s => s.githubUsername),
+            ...UTRP_LEADS.map(l => l.githubUsername),
+            ...UTRP_ALUMNI.map(a => a.githubUsername),
+        ]);
         return Object.keys(githubStats.userGitHubStats)
-            .filter(
-                username =>
-                    !LONGHORN_DEVELOPERS_ADMINS.some(admin => admin.githubUsername === username) &&
-                    !LONGHORN_DEVELOPERS_SWE.some(swe => swe.githubUsername === username)
-            )
+            .filter(username => !knownUsernames.has(username))
             .sort(
                 (a, b) =>
                     (githubStats.userGitHubStats[b]?.commits ?? 0) - (githubStats.userGitHubStats[a]?.commits ?? 0)
             );
     }, [githubStats]);
 
-    if (devMode) {
-        DevStore.set('isDeveloper', true);
+    if (devModeJustEnabled) {
         return <DevMode />;
     }
 
@@ -217,33 +212,52 @@ export default function Settings(): JSX.Element {
             )}
 
             <header className='flex items-center gap-5 overflow-x-auto overflow-y-hidden border-b border-ut-offwhite px-7 py-4 md:overflow-x-hidden'>
-                <LargeLogo />
+                <a
+                    href={calendarPageUrl}
+                    title='Back to Calendar'
+                    onClick={event => {
+                        event.preventDefault();
+                        background.switchToCalendarTab({});
+                    }}
+                >
+                    <LargeLogo />
+                </a>
                 <Divider className='mx-2 self-center md:mx-4' size='2.5rem' orientation='vertical' />
                 <div className='flex flex-1 items-center gap-2'>
                     <Text variant='h1' className='text-ut-burntorange normal-case'>
-                        Settings and Credits
+                        Settings
                     </Text>
                     {isBirthday && (
-                        <span
+                        <button
+                            type='button'
                             onClick={triggerCelebration}
-                            className='cursor-pointer px-4 text-sm text-ut-burntorange transition-transform hover:scale-110'
+                            className='bg-transparent px-4 text-sm text-ut-burntorange transition-transform hover:scale-110'
                             title='Click to celebrate!'
                         >
                             🎉 Happy Birthday LHD! 🎉
-                        </span>
+                        </button>
                     )}
                 </div>
-                <div className='hidden flex-row items-center justify-end gap-6 screenshot:hidden lg:flex'>
-                    <Button variant='minimal' color='theme-black' onClick={handleChangelogOnClick}>
-                        <IconoirGitFork className='h-6 w-6 text-ut-gray' />
-                        <Text variant='small' className='text-ut-gray font-normal'>
-                            v{manifest.version} - {process.env.NODE_ENV}
-                        </Text>
+                <div className='hidden flex-row items-center justify-end gap-spacing-7 screenshot:hidden lg:flex'>
+                    <Button
+                        variant='minimal'
+                        size='small'
+                        color='theme-black'
+                        title='Read Changelog'
+                        onClick={handleChangelogOnClick}
+                    >
+                        <GitMergeIcon className='h-6 w-6 text-ut-gray' />
+                        <span className='text-ut-black'>
+                            v{manifest.version}
+                            {import.meta.env.DEV ? '-dev' : ''}
+                        </span>
                     </Button>
                     <Button
-                        variant='filled'
-                        icon={CalendarDots}
-                        color='ut-burntorange'
+                        variant='minimal'
+                        size='small'
+                        icon={CalendarDotsIcon}
+                        color='ut-black'
+                        title='Open Calendar'
                         onClick={() => background.switchToCalendarTab({})}
                     >
                         Calendar
@@ -253,25 +267,31 @@ export default function Settings(): JSX.Element {
 
             <div className='p-6 lg:flex'>
                 <div className='mr-4 lg:w-1/2 xl:w-xl'>
-                    <AdvancedSettings
-                        highlightConflicts={highlightConflicts}
-                        setHighlightConflicts={setHighlightConflicts}
-                        loadAllCourses={loadAllCourses}
-                        setLoadAllCourses={setLoadAllCourses}
-                        increaseScheduleLimit={increaseScheduleLimit}
-                        setIncreaseScheduleLimit={setIncreaseScheduleLimit}
-                        calendarNewTab={calendarNewTab}
-                        setCalendarNewTab={setCalendarNewTab}
-                        activeSchedule={activeSchedule}
-                        handleEraseAll={handleEraseAll}
-                        handleImportClick={handleImportClick}
-                    />
+                    {options && (
+                        <AdvancedSettings
+                            highlightConflicts={options.enableHighlightConflicts}
+                            loadAllCourses={options.enableScrollToLoad}
+                            increaseScheduleLimit={options.allowMoreSchedules}
+                            calendarNewTab={options.alwaysOpenCalendarInNewTab}
+                            enableDataRefreshing={enableDataRefreshing}
+                            enableCourseStatusChips={enableCourseStatusChips}
+                            activeSchedule={activeSchedule}
+                            handleEraseAll={handleEraseAll}
+                            handleImportClick={handleImportClick}
+                        />
+                    )}
 
                     <Divider size='auto' orientation='horizontal' />
 
                     <section className='my-8 space-y-4'>
-                        <h2 className='mb-4 text-xl text-ut-black font-semibold' onClick={toggleDevMode}>
-                            Developer Mode
+                        <h2 className='mb-4 text-xl text-ut-black font-semibold'>
+                            <button
+                                type='button'
+                                onClick={toggleDevMode}
+                                className='bg-transparent text-inherit text-xl font-semibold'
+                            >
+                                Developer Mode
+                            </button>
                         </h2>
 
                         <div className='flex items-center justify-between'>
@@ -320,7 +340,9 @@ export default function Settings(): JSX.Element {
                                         color='ut-burntorange'
                                         onClick={() => {
                                             const debugPageUrl = chrome.runtime.getURL(CRX_PAGES.DEBUG);
-                                            background.openNewTab({ url: debugPageUrl });
+                                            background.openNewTab({
+                                                url: debugPageUrl,
+                                            });
                                         }}
                                     >
                                         Open Debug Page
@@ -357,6 +379,7 @@ export default function Settings(): JSX.Element {
                                     key={admin.githubUsername}
                                     name={admin.name}
                                     githubUsername={admin.githubUsername}
+                                    personalWebsite={getPersonalWebsite(admin)}
                                     roles={admin.role}
                                     stats={githubStats?.adminGitHubStats[admin.githubUsername]}
                                     showStats={showGitHubStats}
@@ -373,6 +396,7 @@ export default function Settings(): JSX.Element {
                                     key={swe.githubUsername}
                                     name={swe.name}
                                     githubUsername={swe.githubUsername}
+                                    personalWebsite={getPersonalWebsite(swe)}
                                     roles={swe.role}
                                     stats={githubStats?.userGitHubStats[swe.githubUsername]}
                                     showStats={showGitHubStats}
@@ -384,10 +408,10 @@ export default function Settings(): JSX.Element {
                                 : additionalContributors.map(username => (
                                       <ContributorCard
                                           key={username}
-                                          name={githubStats!.names[username] || username}
+                                          name={githubStats?.names[username] || username}
                                           githubUsername={username}
                                           roles={['Contributor']}
-                                          stats={githubStats!.userGitHubStats[username]}
+                                          stats={githubStats?.userGitHubStats[username]}
                                           showStats={showGitHubStats}
                                           includeMergedPRs={INCLUDE_MERGED_PRS}
                                       />

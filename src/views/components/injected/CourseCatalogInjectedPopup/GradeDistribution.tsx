@@ -10,9 +10,10 @@ import {
     querySemesterDistribution,
 } from '@views/lib/database/queryDistribution';
 import Highcharts from 'highcharts';
-import HighchartsReact from 'highcharts-react-official';
-import type { ChangeEvent } from 'react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { HighchartsReactRefObject } from 'highcharts-react-official';
+import * as HighchartsReactModule from 'highcharts-react-official';
+import type { ChangeEvent, JSX } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Skeleton from 'react-loading-skeleton';
 
@@ -32,6 +33,11 @@ const DataStatus = {
 
 type DataStatusType = (typeof DataStatus)[keyof typeof DataStatus];
 
+const HighchartsReact =
+    HighchartsReactModule.default && '$$typeof' in HighchartsReactModule.default
+        ? HighchartsReactModule.default
+        : HighchartsReactModule.HighchartsReact;
+
 const GRADE_COLORS = {
     A: extendedColors.gradeDistribution.a,
     'A-': extendedColors.gradeDistribution.aminus,
@@ -48,6 +54,12 @@ const GRADE_COLORS = {
     Other: extendedColors.gradeDistribution.other,
 } as const satisfies Record<LetterGrade, string>;
 
+const semesterOrdering = new Map([
+    ['Fall', 0],
+    ['Summer', 1],
+    ['Spring', 2],
+]);
+
 /**
  * Renders the grade distribution chart for a specific course.
  *
@@ -59,11 +71,11 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
     type Distributions = Record<string, { data: Distribution; instructorIncluded: boolean }>;
     const [distributions, setDistributions] = useState<Distributions>({});
     const [status, setStatus] = useState<DataStatusType>(DataStatus.LOADING);
-    const ref = useRef<HighchartsReact.RefObject>(null);
+    const ref = useRef<HighchartsReactRefObject>(null);
 
     const chartData = useMemo(() => {
         if (status === DataStatus.FOUND && distributions[semester]) {
-            return Object.entries(distributions[semester]!.data).map(([grade, count]) => ({
+            return Object.entries(distributions[semester]?.data).map(([grade, count]) => ({
                 y: count,
                 color: GRADE_COLORS[grade as LetterGrade],
             }));
@@ -77,7 +89,10 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
                 const [aggregateDist, semesters, instructorIncludedAggregate] =
                     await queryAggregateDistribution(course);
                 const initialDistributions: Distributions = {
-                    Aggregate: { data: aggregateDist, instructorIncluded: instructorIncludedAggregate },
+                    Aggregate: {
+                        data: aggregateDist,
+                        instructorIncluded: instructorIncludedAggregate,
+                    },
                 };
                 const semesterPromises = semesters.map(semester => querySemesterDistribution(course, semester));
                 const semesterDistributions = await Promise.allSettled(semesterPromises);
@@ -131,7 +146,6 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
                 },
                 useHTML: true,
                 formatter() {
-                    // eslint-disable-next-line react/no-this-in-sfc
                     const val = `${this.value}`;
 
                     return val === 'Other'
@@ -187,7 +201,10 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
             },
         },
         chart: {
-            style: { fontFamily: 'Roboto Flex, Roboto Flex Local', fontWeight: '600' },
+            style: {
+                fontFamily: 'Roboto Flex, Roboto Flex Local',
+                fontWeight: '600',
+            },
             spacingBottom: 25,
             spacingTop: 25,
             spacingLeft: 1.5,
@@ -244,7 +261,11 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
                     }}
                 />
             )}
-            {status === DataStatus.ERROR && <Text variant='p'>Error fetching grade distribution data</Text>}
+            {status === DataStatus.ERROR && (
+                <Text variant='p' className='pb-3'>
+                    Error fetching grade distribution data
+                </Text>
+            )}
             {status === DataStatus.FOUND && (
                 <>
                     <div className='flex flex-wrap content-center items-center self-stretch justify-center gap-3'>
@@ -268,13 +289,16 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
                                     }
 
                                     const [season1, year1] = k1.split(' ');
-                                    const [, year2] = k2.split(' ');
+                                    const [season2, year2] = k2.split(' ');
 
                                     if (year1 !== year2) {
                                         return parseInt(year2 as string, 10) - parseInt(year1 as string, 10);
                                     }
 
-                                    return season1 === 'Fall' ? -1 : 1;
+                                    return (
+                                        (semesterOrdering.get(season1 ?? 'Fall') ?? 0) -
+                                        (semesterOrdering.get(season2 ?? 'Fall') ?? 0)
+                                    );
                                 })
                                 .map(semester => (
                                     <option key={semester} value={semester}>
@@ -286,7 +310,7 @@ export default function GradeDistribution({ course }: GradeDistributionProps): J
                             Data Source
                         </Link>
                     </div>
-                    {distributions[semester] && !distributions[semester]!.instructorIncluded && (
+                    {distributions[semester] && !distributions[semester]?.instructorIncluded && (
                         <div className='mt-3 flex flex-wrap content-center items-center self-stretch justify-center gap-3 text-center'>
                             <Text variant='small' className='text-theme-red'>
                                 We couldn&apos;t find {semester !== 'Aggregate' && ` ${semester}`} grades for this

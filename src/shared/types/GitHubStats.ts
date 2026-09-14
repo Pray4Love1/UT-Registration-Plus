@@ -3,6 +3,7 @@ export type TeamMember = {
     name: string;
     role: string[];
     githubUsername: string;
+    personalWebsite?: string;
 };
 
 export type GitHubStats = {
@@ -15,11 +16,7 @@ export type GitHubStats = {
 export type GitHubStatsResult = {
     adminGitHubStats: Record<string, GitHubStats>;
     userGitHubStats: Record<string, GitHubStats>;
-    contributors: string[];
     names: Record<string, string>;
-    dataFetched: Date;
-    lastUpdated: Date;
-    isCached: boolean;
 };
 
 export type ContributorStats = {
@@ -30,11 +27,4 @@ export type ContributorStats = {
 
 export type ContributorUser = {
     name: string | undefined;
-};
-
-export type FetchResult<T> = {
-    data: T;
-    dataFetched: Date;
-    lastUpdated: Date;
-    isCached: boolean;
 };
